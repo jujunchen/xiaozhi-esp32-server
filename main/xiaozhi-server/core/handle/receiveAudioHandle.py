@@ -14,13 +14,13 @@ async def handleAudioMessage(conn, audio):
     # 当前片段是否有人说话
     have_voice = conn.vad.is_vad(conn, audio)
     # 如果设备刚刚被唤醒，短暂忽略VAD检测
-    if have_voice and hasattr(conn, "just_woken_up") and conn.just_woken_up:
-        have_voice = False
-        # 设置一个短暂延迟后恢复VAD检测
-        conn.asr_audio.clear()
-        if not hasattr(conn, "vad_resume_task") or conn.vad_resume_task.done():
-            conn.vad_resume_task = asyncio.create_task(resume_vad_detection(conn))
-        return
+    # if have_voice and hasattr(conn, "just_woken_up") and conn.just_woken_up:
+    #     have_voice = False
+    #     # 设置一个短暂延迟后恢复VAD检测
+    #     conn.asr_audio.clear()
+    #     if not hasattr(conn, "vad_resume_task") or conn.vad_resume_task.done():
+    #         conn.vad_resume_task = asyncio.create_task(resume_vad_detection(conn))
+    #     return
     if have_voice:
         if conn.client_is_speaking:
             await handleAbortMessage(conn)
