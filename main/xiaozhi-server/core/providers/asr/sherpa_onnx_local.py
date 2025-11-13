@@ -3,6 +3,7 @@ import wave
 import os
 import sys
 import io
+import uuid
 from config.logger import setup_logging
 from typing import Optional, Tuple, List
 from core.providers.asr.dto.dto import InterfaceType
@@ -10,6 +11,7 @@ from core.providers.asr.base import ASRProviderBase
 
 import numpy as np
 import sherpa_onnx
+import soundfile as sf
 
 from modelscope.hub.file_download import model_file_download
 
@@ -72,6 +74,8 @@ class ASRProvider(ASRProviderBase):
         except Exception as e:
             logger.bind(tag=TAG).error(f"模型文件处理失败: {str(e)}")
             raise
+        
+        self.denoiser = self.init_denoiser()
 
         with CaptureOutput():
             if self.model_type == "paraformer":
@@ -93,8 +97,23 @@ class ASRProvider(ASRProviderBase):
                     feature_dim=80,
                     decoding_method="greedy_search",
                     debug=False,
+                    provider="cpu",
                     use_itn=True,
                 )
+                
+    def init_denoiser(self) -> sherpa_onnx.OfflineSpeechDenoiser:
+        """初始化语音降噪器"""
+        config = sherpa_onnx.OfflineSpeechDenoiserConfig(
+            model=sherpa_onnx.OfflineSpeechDenoiserModelConfig(
+                gtcrn=sherpa_onnx.OfflineSpeechDenoiserGtcrnModelConfig(
+                    model=os.path.join("models/denoiser", "gtcrn_simple.onnx")
+                ),
+                debug=False,
+                num_threads=2,
+                provider="cpu",
+            )
+        )
+        return sherpa_onnx.OfflineSpeechDenoiser(config)                
 
     def read_wave(self, wave_filename: str) -> Tuple[np.ndarray, int]:
         """
@@ -137,11 +156,23 @@ class ASRProvider(ASRProviderBase):
                 f"音频文件保存耗时: {time.time() - start_time:.3f}s | 路径: {file_path}"
             )
 
+            # 降噪处理
+            samples, sample_rate = sf.read(file_path, always_2d=True, dtype="float32")
+            samples = samples[:, 0]  # 取单声道
+            denoised_file = self.denoiser(samples, sample_rate)
+
+            #降噪前的声音
+            # file_name = f"asr_{os.path.basename(file_path)}_2.wav"
+            # file_path = os.path.join(self.output_dir, file_name)
+
+            sf.write(file_path, denoised_file.samples, denoised_file.sample_rate)
+
             # 语音识别
             start_time = time.time()
             s = self.model.create_stream()
-            samples, sample_rate = self.read_wave(file_path)
-            s.accept_waveform(sample_rate, samples)
+            # samples, sample_rate = self.read_wave(file_path)
+            s.accept_waveform(denoised_file.sample_rate, denoised_file.samples)
+            # s.accept_waveform(sample_rate, samples)
             self.model.decode_stream(s)
             text = s.result.text
             logger.bind(tag=TAG).debug(
