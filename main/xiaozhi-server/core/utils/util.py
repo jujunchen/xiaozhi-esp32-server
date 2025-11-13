@@ -147,7 +147,7 @@ def remove_punctuation_and_length(text):
         ]
     )
 
-    if result == "Yeah":
+    if result == "Yeah" or result == "Okay":
         return 0, ""
     return len(result), result
 
