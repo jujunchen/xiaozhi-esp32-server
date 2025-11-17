@@ -66,7 +66,7 @@ class PromptManager:
     def _load_base_template(self):
         """加载基础提示词模板"""
         try:
-            template_path = "agent-base-prompt.txt"
+            template_path = self.config.get("prompt_template", "agent-base-prompt.txt")
             cache_key = f"prompt_template:{template_path}"
 
             # 先从缓存获取
@@ -88,7 +88,7 @@ class PromptManager:
                 self.base_prompt_template = template_content
                 self.logger.bind(tag=TAG).debug("成功加载基础提示词模板并缓存")
             else:
-                self.logger.bind(tag=TAG).warning("未找到agent-base-prompt.txt文件")
+                self.logger.bind(tag=TAG).warning(f"未找到{template_path}文件")
         except Exception as e:
             self.logger.bind(tag=TAG).error(f"加载提示词模板失败: {e}")
 
@@ -184,7 +184,7 @@ class PromptManager:
             self.logger.bind(tag=TAG).error(f"更新上下文信息失败: {e}")
 
     def build_enhanced_prompt(
-        self, user_prompt: str, device_id: str, client_ip: str = None
+        self, user_prompt: str, device_id: str, client_ip: str = None, *args, **kwargs
     ) -> str:
         """构建增强的系统提示词"""
         if not self.base_prompt_template:
@@ -225,6 +225,8 @@ class PromptManager:
                 weather_info=weather_info,
                 emojiList=EMOJI_List,
                 device_id=device_id,
+                client_ip=client_ip,
+                *args, **kwargs
             )
             device_cache_key = f"device_prompt:{device_id}"
             self.cache_manager.set(

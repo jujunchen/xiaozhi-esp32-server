@@ -19,8 +19,8 @@ import com.baomidou.mybatisplus.core.metadata.IPage;
 
 import lombok.AllArgsConstructor;
 import xiaozhi.common.constant.Constant;
-import xiaozhi.common.exception.RenException;
 import xiaozhi.common.exception.ErrorCode;
+import xiaozhi.common.exception.RenException;
 import xiaozhi.common.page.PageData;
 import xiaozhi.common.redis.RedisKeys;
 import xiaozhi.common.redis.RedisUtils;
@@ -42,6 +42,7 @@ import xiaozhi.modules.agent.service.AgentTemplateService;
 import xiaozhi.modules.agent.vo.AgentInfoVO;
 import xiaozhi.modules.device.service.DeviceService;
 import xiaozhi.modules.model.dto.ModelProviderDTO;
+import xiaozhi.modules.model.dto.VoiceDTO;
 import xiaozhi.modules.model.entity.ModelConfigEntity;
 import xiaozhi.modules.model.service.ModelConfigService;
 import xiaozhi.modules.model.service.ModelProviderService;
@@ -183,6 +184,9 @@ public class AgentServiceImpl extends BaseServiceImpl<AgentDao, AgentEntity> imp
 
     @Override
     public boolean checkAgentPermission(String agentId, Long userId) {
+        if (SecurityUser.getUser() == null || SecurityUser.getUser().getId() == null) {
+            return false;
+        }
         // 获取智能体信息
         AgentEntity agent = getAgentById(agentId);
         if (agent == null) {
@@ -370,6 +374,22 @@ public class AgentServiceImpl extends BaseServiceImpl<AgentDao, AgentEntity> imp
             entity.setLlmModelId(template.getLlmModelId());
             entity.setVllmModelId(template.getVllmModelId());
             entity.setTtsModelId(template.getTtsModelId());
+
+            if (template.getTtsVoiceId() == null && template.getTtsModelId() != null) {
+                ModelConfigEntity ttsModel = modelConfigService.selectById(template.getTtsModelId());
+                if (ttsModel != null && ttsModel.getConfigJson() != null) {
+                    Map<String, Object> config = ttsModel.getConfigJson();
+                    String voice = (String) config.get("voice");
+                    if (StringUtils.isBlank(voice)) {
+                        voice = (String) config.get("speaker");
+                    }
+                    VoiceDTO timbre = timbreModelService.getByVoiceCode(template.getTtsModelId(), voice);
+                    if (timbre != null) {
+                        template.setTtsVoiceId(timbre.getId());
+                    }
+                }
+            }
+
             entity.setTtsVoiceId(template.getTtsVoiceId());
             entity.setMemModelId(template.getMemModelId());
             entity.setIntentModelId(template.getIntentModelId());

@@ -6,7 +6,7 @@ from core.utils.dialogue import Message
 from core.utils.util import audio_to_data
 from core.providers.tts.dto.dto import SentenceType
 from core.utils.wakeup_word import WakeupWordsConfig
-from core.handle.sendAudioHandle import sendAudioMessage, send_stt_message
+from core.handle.sendAudioHandle import sendAudioMessage, send_tts_message
 from core.utils.util import remove_punctuation_and_length, opus_datas_to_wav_bytes
 from core.providers.tools.device_mcp import (
     MCPClient,
@@ -73,7 +73,7 @@ async def checkWakeupWords(conn, text):
         return False
 
     conn.just_woken_up = True
-    await send_stt_message(conn, text)
+    await send_tts_message(conn, "start")
 
     # 获取当前音色
     voice = getattr(conn.tts, "voice", "default")
@@ -111,7 +111,7 @@ async def checkWakeupWords(conn, text):
 
 
 async def wakeupWordsResponse(conn):
-    if not conn.tts or not conn.llm or not conn.llm.response_no_stream:
+    if not conn.tts:
         return
 
     try:
@@ -119,16 +119,8 @@ async def wakeupWordsResponse(conn):
         if not await _wakeup_response_lock.acquire():
             return
 
-        # 生成唤醒词回复
-        wakeup_word = random.choice(WAKEUP_CONFIG["words"])
-        question = (
-            "此刻用户正在和你说```"
-            + wakeup_word
-            + "```。\n请你根据以上用户的内容进行20-30字回复。要符合系统设置的角色情感和态度，不要像机器人一样说话。\n"
-            + "请勿对这条内容本身进行任何解释和回应，请勿返回表情符号，仅返回对用户的内容的回复。"
-        )
-
-        result = conn.llm.response_no_stream(conn.config["prompt"], question)
+        # 从预定义回复列表中随机选择一个回复
+        result = random.choice(WAKEUP_CONFIG["responses"])
         if not result or len(result) == 0:
             return
 
