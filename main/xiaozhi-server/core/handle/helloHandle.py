@@ -17,8 +17,10 @@ from core.providers.tools.device_mcp import (
 TAG = __name__
 
 WAKEUP_CONFIG = {
-    "refresh_time": 5,
-    "words": ["你好", "你好啊", "嘿，你好", "嗨"],
+    "refresh_time": 10,
+    "responses": [
+        "我一直都在呢，您请说。",
+    ],
 }
 
 # 创建全局的唤醒词配置管理器

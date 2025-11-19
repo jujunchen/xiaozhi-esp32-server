@@ -70,6 +70,7 @@ class ASRProvider(ASRProviderBase):
 
             self.model_path = model_files["model.int8.onnx"]
             self.tokens_path = model_files["tokens.txt"]
+            self.replace_fst = os.path.join("models/sherpa-onnx", "replace.fst")
 
         except Exception as e:
             logger.bind(tag=TAG).error(f"模型文件处理失败: {str(e)}")
@@ -82,23 +83,25 @@ class ASRProvider(ASRProviderBase):
                 self.model = sherpa_onnx.OfflineRecognizer.from_paraformer(
                     paraformer=self.model_path,
                     tokens=self.tokens_path,
-                    num_threads=2,
+                    num_threads=5,
                     sample_rate=16000,
                     feature_dim=80,
                     decoding_method="greedy_search",
                     debug=False,
+                    hr_rule_fsts=self.replace_fst,
                 )
             else:  # sense_voice
                 self.model = sherpa_onnx.OfflineRecognizer.from_sense_voice(
                     model=self.model_path,
                     tokens=self.tokens_path,
-                    num_threads=2,
+                    num_threads=5,
                     sample_rate=16000,
                     feature_dim=80,
                     decoding_method="greedy_search",
                     debug=False,
                     provider="cpu",
                     use_itn=True,
+                    hr_rule_fsts=self.replace_fst,
                 )
                 
     def init_denoiser(self) -> sherpa_onnx.OfflineSpeechDenoiser:
