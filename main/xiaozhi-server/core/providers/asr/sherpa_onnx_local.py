@@ -71,6 +71,7 @@ class ASRProvider(ASRProviderBase):
             self.model_path = model_files["model.int8.onnx"]
             self.tokens_path = model_files["tokens.txt"]
             self.replace_fst = os.path.join("models/sherpa-onnx", "replace.fst")
+            self.lexicon = os.path.join("models/sherpa-onnx", "lexicon.txt")
 
         except Exception as e:
             logger.bind(tag=TAG).error(f"模型文件处理失败: {str(e)}")
@@ -89,19 +90,35 @@ class ASRProvider(ASRProviderBase):
                     decoding_method="greedy_search",
                     debug=False,
                     hr_rule_fsts=self.replace_fst,
+                    hr_lexicon=self.lexicon,
                 )
-            else:  # sense_voice
-                self.model = sherpa_onnx.OfflineRecognizer.from_sense_voice(
+            elif self.model_type == "zipformer_ctc":  
+                self.model = sherpa_onnx.OfflineRecognizer.from_zipformer_ctc(
                     model=self.model_path,
                     tokens=self.tokens_path,
-                    num_threads=5,
+                    num_threads=2,
                     sample_rate=16000,
                     feature_dim=80,
                     decoding_method="greedy_search",
                     debug=False,
                     provider="cpu",
+                    hr_rule_fsts=self.replace_fst,
+                    hr_lexicon=self.lexicon,
+                )
+            else:  # sense_voice
+                self.model = sherpa_onnx.OfflineRecognizer.from_sense_voice(
+                    model=self.model_path,
+                    tokens=self.tokens_path,
+                    num_threads=2,
+                    sample_rate=16000,
+                    feature_dim=80,
+                    decoding_method="greedy_search",
+                    debug=False,
+                    provider="cpu",
+                    language="zh",
                     use_itn=True,
                     hr_rule_fsts=self.replace_fst,
+                    hr_lexicon=self.lexicon,
                 )
                 
     def init_denoiser(self) -> sherpa_onnx.OfflineSpeechDenoiser:
@@ -178,7 +195,7 @@ class ASRProvider(ASRProviderBase):
             # s.accept_waveform(sample_rate, samples)
             self.model.decode_stream(s)
             text = s.result.text
-            logger.bind(tag=TAG).debug(
+            logger.bind(tag=TAG).info(
                 f"语音识别耗时: {time.time() - start_time:.3f}s | 结果: {text}"
             )
 
