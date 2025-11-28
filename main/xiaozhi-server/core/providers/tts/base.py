@@ -89,7 +89,9 @@ class TTSProviderBase(ABC):
             # 需要删除文件的直接转为音频数据
             while max_repeat_time > 0:
                 try:
+                    st = time.time()
                     audio_bytes = asyncio.run(self.text_to_speak(text, None))
+
                     if audio_bytes:
                         self.tts_audio_queue.put((SentenceType.FIRST, None, text))
                         audio_bytes_to_data_stream(
@@ -98,6 +100,7 @@ class TTSProviderBase(ABC):
                             is_opus=True,
                             callback=opus_handler,
                         )
+                        logger.info(f"tts耗时: {time.time() - st} s")
                         break
                     else:
                         max_repeat_time -= 1
@@ -151,6 +154,7 @@ class TTSProviderBase(ABC):
             # 需要删除文件的直接转为音频数据
             while max_repeat_time > 0:
                 try:
+                    st = time.time()
                     audio_bytes = asyncio.run(self.text_to_speak(text, None))
                     if audio_bytes:
                         audio_datas = []
@@ -160,6 +164,7 @@ class TTSProviderBase(ABC):
                             is_opus=True,
                             callback=lambda data: audio_datas.append(data)
                         )
+                        logger.info(f"tts耗时: {time.time() - st} s")
                         return audio_datas
                     else:
                         max_repeat_time -= 1

@@ -2,6 +2,7 @@ import os
 import json
 import uuid
 import requests
+import aiofiles
 from config.logger import setup_logging
 from datetime import datetime
 from core.providers.tts.base import TTSProviderBase
@@ -44,8 +45,10 @@ class TTSProvider(TTSProviderBase):
             resp = requests.get(self.url, params=request_params, headers=self.headers)
         if resp.status_code == 200:
             if output_file:
-                with open(output_file, "wb") as file:
-                    file.write(resp.content)
+                # 异步保存文件
+                async with aiofiles.open(output_file, "wb") as file:
+                    await file.write(resp.content)
+                return None  # 文件已保存到磁盘
             else:
                 return resp.content
         else:
