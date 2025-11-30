@@ -2,27 +2,27 @@ import json
 
 TAG = __name__
 EMOJI_MAP = {
-    "😂": "laughing",
-    "😭": "crying",
-    "😠": "angry",
-    "😔": "sad",
-    "😍": "loving",
-    "😲": "surprised",
-    "😱": "shocked",
-    "🤔": "thinking",
-    "😌": "relaxed",
-    "😴": "sleepy",
-    "😜": "silly",
-    "🙄": "confused",
-    "😶": "neutral",
-    "🙂": "happy",
-    "😆": "laughing",
-    "😳": "embarrassed",
-    "😉": "winking",
-    "😎": "cool",
-    "🤤": "delicious",
-    "😘": "kissy",
-    "😏": "confident",
+    "😂": ["laughing", "苦笑不得"],
+    "😭": ["crying", "想哭"],
+    "😠": ["angry", "生气"],
+    "😔": ["sad", "伤心"],
+    "😍": ["loving", "羡慕"],
+    "😲": ["surprised", "惊讶"],
+    "😱": ["shocked", "震惊"],
+    "🤔": ["thinking","严谨"],
+    "😌": ["relaxed","轻松愉快"],
+    "😴": ["sleepy","疲惫犯困迷惑"],
+    "😜": ["silly","傻傻的"],
+    "🙄": ["confused","困惑的"],
+    "😶": ["neutral",""],
+    "🙂": ["happy","开心愉快"],
+    "😆": ["laughing","发笑"],
+    "😳": ["embarrassed","尴尬"],
+    "😉": ["winking","灵光一现"],
+    "😎": ["cool","酷酷的"],
+    "🤤": ["delicious","美味的"],
+    "😘": ["kissy","暧昧的"],
+    "😏": ["confident","自信的"],
 }
 EMOJI_RANGES = [
     (0x1F600, 0x1F64F),
@@ -85,6 +85,7 @@ async def get_emotion(conn, text):
         if char in EMOJI_MAP:
             emoji = char
             emotion = EMOJI_MAP[char]
+            conn.sentence_tone = emotion[1]
             break
     try:
         await conn.websocket.send(
@@ -92,7 +93,7 @@ async def get_emotion(conn, text):
                 {
                     "type": "llm",
                     "text": emoji,
-                    "emotion": emotion,
+                    "emotion": emotion[0],
                     "session_id": conn.session_id,
                 }
             )

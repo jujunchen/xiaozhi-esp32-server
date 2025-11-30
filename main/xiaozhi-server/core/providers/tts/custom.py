@@ -20,6 +20,10 @@ class TTSProvider(TTSProviderBase):
         self.audio_file_type = config.get("format", "wav")
         self.output_file = config.get("output_dir", "tmp/")
         self.params = config.get("params")
+        if config.get("private_voice"):
+            self.voice = config.get("private_voice")
+        else:
+            self.voice = config.get("voice")
 
         if isinstance(self.params, str):
             try:
@@ -37,12 +41,16 @@ class TTSProvider(TTSProviderBase):
         for k, v in self.params.items():
             if isinstance(v, str) and "{prompt_text}" in v:
                 v = v.replace("{prompt_text}", text)
+            if isinstance(v, str) and "{voice}" in v:
+                v = v.replace("{voice}", self.voice)
+            if isinstance(v, str) and "{tone}" in v:
+                v = v.replace("{tone}", self.conn.sentence_tone)        
             request_params[k] = v
 
         if self.method.upper() == "POST":
-            resp = requests.post(self.url, json=request_params, headers=self.headers)
+            resp = requests.post(self.url, json=request_params, headers=self.headers, stream=True)
         else:
-            resp = requests.get(self.url, params=request_params, headers=self.headers)
+            resp = requests.get(self.url, params=request_params, headers=self.headers, stream=True)
         if resp.status_code == 200:
             if output_file:
                 # 异步保存文件

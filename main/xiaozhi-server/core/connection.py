@@ -134,6 +134,7 @@ class ConnectionHandler:
         self.sentence_id = None
         # 处理TTS响应没有文本返回
         self.tts_MessageText = ""
+        self.sentence_tone = ''
 
         # iot相关变量
         self.iot_descriptors = {}
@@ -781,6 +782,7 @@ class ConnectionHandler:
         content_arguments = ""
         self.client_abort = False
         emotion_flag = True
+        self.sentence_tone = '' # 说话语气
         for response in llm_responses:
             if self.client_abort:
                 break
