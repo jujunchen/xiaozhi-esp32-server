@@ -70,8 +70,10 @@ class ASRProvider(ASRProviderBase):
 
             self.model_path = model_files["model.int8.onnx"]
             self.tokens_path = model_files["tokens.txt"]
+
             self.replace_fst = os.path.join("models/sherpa-onnx", "replace.fst")
             self.lexicon = os.path.join("models/sherpa-onnx", "lexicon.txt")
+            self.hotwords_file = os.path.join("models/sherpa-onnx", "hotwords_cn.txt")
 
         except Exception as e:
             logger.bind(tag=TAG).error(f"模型文件处理失败: {str(e)}")
@@ -105,15 +107,34 @@ class ASRProvider(ASRProviderBase):
                     hr_rule_fsts=self.replace_fst,
                     hr_lexicon=self.lexicon,
                 )
+            elif self.model_type == "transducer":  #支持热词
+                self.model = sherpa_onnx.OfflineRecognizer.from_transducer(
+                    encoder=os.path.join(self.model_dir, "encoder-epoch-34-avg-19.onnx"),
+                    decoder=os.path.join(self.model_dir, "decoder-epoch-34-avg-19.onnx"),
+                    joiner=os.path.join(self.model_dir, "joiner-epoch-34-avg-19.onnx"),
+                    tokens=self.tokens_path,
+                    num_threads=5,
+                    sample_rate=16000,
+                    feature_dim=80,
+                    decoding_method="modified_beam_search",
+                    debug=False,
+                    provider="cpu",
+                    modeling_unit="cjkchar+bpe",
+                    bpe_vocab=os.path.join(self.model_dir, "bbpe.vocab"),
+                    hotwords_file=self.hotwords_file,
+                    hotwords_score=2.0,
+                    hr_rule_fsts=self.replace_fst,
+                    hr_lexicon=self.lexicon,
+                )
             else:  # sense_voice
                 self.model = sherpa_onnx.OfflineRecognizer.from_sense_voice(
                     model=self.model_path,
                     tokens=self.tokens_path,
-                    num_threads=2,
+                    num_threads=5,
                     sample_rate=16000,
                     feature_dim=80,
                     decoding_method="greedy_search",
-                    debug=False,
+                    debug=True,
                     provider="cpu",
                     language="zh",
                     use_itn=True,
@@ -129,7 +150,7 @@ class ASRProvider(ASRProviderBase):
                     model=os.path.join("models/denoiser", "gtcrn_simple.onnx")
                 ),
                 debug=False,
-                num_threads=2,
+                num_threads=5,
                 provider="cpu",
             )
         )
@@ -177,22 +198,25 @@ class ASRProvider(ASRProviderBase):
             )
 
             # 降噪处理
-            samples, sample_rate = sf.read(file_path, always_2d=True, dtype="float32")
-            samples = samples[:, 0]  # 取单声道
-            denoised_file = self.denoiser(samples, sample_rate)
-
+            # start_time = time.time()
+            # samples, sample_rate = sf.read(file_path, always_2d=True, dtype="float32")
+            # samples = samples[:, 0]  # 取单声道
+            # denoised_file = self.denoiser(samples, sample_rate)
+            # logger.bind(tag=TAG).debug(
+            #     f"降噪处理耗时: {time.time() - start_time:.3f}s | 降噪文件: {file_path}"
+            # )
             #降噪前的声音
             # file_name = f"asr_{os.path.basename(file_path)}_2.wav"
             # file_path = os.path.join(self.output_dir, file_name)
 
-            sf.write(file_path, denoised_file.samples, denoised_file.sample_rate)
+            # sf.write(file_path, denoised_file.samples, denoised_file.sample_rate)
 
             # 语音识别
             start_time = time.time()
             s = self.model.create_stream()
-            # samples, sample_rate = self.read_wave(file_path)
-            s.accept_waveform(denoised_file.sample_rate, denoised_file.samples)
-            # s.accept_waveform(sample_rate, samples)
+            samples, sample_rate = self.read_wave(file_path)
+            # s.accept_waveform(denoised_file.sample_rate, denoised_file.samples)
+            s.accept_waveform(sample_rate, samples)
             self.model.decode_stream(s)
             text = s.result.text
             logger.bind(tag=TAG).info(
