@@ -84,8 +84,8 @@ async def get_emotion(conn, text):
     for char in text:
         if char in EMOJI_MAP:
             emoji = char
-            emotion = EMOJI_MAP[char]
-            conn.sentence_tone = emotion[1]
+            emotion = EMOJI_MAP[char][0]
+            # conn.sentence_tone = emotion[1]
             break
     try:
         await conn.websocket.send(
@@ -93,7 +93,7 @@ async def get_emotion(conn, text):
                 {
                     "type": "llm",
                     "text": emoji,
-                    "emotion": emotion[0],
+                    "emotion": emotion,
                     "session_id": conn.session_id,
                 }
             )
