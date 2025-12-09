@@ -47,25 +47,34 @@ class ASRProvider(ASRProviderBase):
         Yields each message as it is received.
         """
         text = ""
-        while True:
-            try:
-                response = await asyncio.wait_for(ws.recv(), timeout=5)
-                response_data = json.loads(response)
-                logger.bind(tag=TAG).debug(f"Received response: {response_data}")
-                if response_data.get("is_final", True):
-                    text += response_data.get("text", "")
-                    break
-                else:
-                    text += response_data.get("text", "")
-            except asyncio.TimeoutError:
-                logger.bind(tag=TAG).error(
-                    "Timeout while waiting for response from WebSocket."
-                )
-                break
-            except websockets.exceptions.ConnectionClosed as e:
-                logger.bind(tag=TAG).error(f"WebSocket connection closed: {e}")
-                break
+        try:
+            response = await asyncio.wait_for(ws.recv(), timeout=5)
+            response_data = json.loads(response)
+            logger.bind(tag=TAG).debug(f"Received response: {response_data}")
+            text += response_data.get("text", "")
+        except websockets.exceptions.ConnectionClosed as e:
+            logger.bind(tag=TAG).error(f"WebSocket connection closed: {e}")
         return text
+      
+        # while True:
+        #     try:
+        #         response = await asyncio.wait_for(ws.recv(), timeout=5)
+        #         response_data = json.loads(response)
+        #         logger.bind(tag=TAG).debug(f"Received response: {response_data}")
+        #         if response_data.get("is_final", True):
+        #             text += response_data.get("text", "")
+        #             break
+        #         else:
+        #             text += response_data.get("text", "")
+        #     except asyncio.TimeoutError:
+        #         logger.bind(tag=TAG).error(
+        #             "Timeout while waiting for response from WebSocket."
+        #         )
+        #         break
+        #     except websockets.exceptions.ConnectionClosed as e:
+        #         logger.bind(tag=TAG).error(f"WebSocket connection closed: {e}")
+        #         break
+        # return text
 
     async def _send_data(self, ws, pcm_data: bytes, session_id: str) -> tuple:
         """
