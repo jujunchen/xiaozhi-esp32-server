@@ -10,6 +10,7 @@ import threading
 import traceback
 import subprocess
 import websockets
+from datetime import datetime
 
 from core.utils.util import (
     extract_json_from_string,
@@ -820,6 +821,7 @@ class ConnectionHandler:
             if content is not None and len(content) > 0:
                 if not tool_call_flag:
                     response_message.append(content)
+                    self.logger.bind(tag=TAG).debug(f"tts_text加入队列文本: {content}")
                     self.tts.tts_text_queue.put(
                         TTSMessageDTO(
                             sentence_id=self.sentence_id,

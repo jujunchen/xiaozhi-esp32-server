@@ -91,8 +91,10 @@ class TTSProviderBase(ABC):
                 try:
                     st = time.time()
                     audio_bytes = asyncio.run(self.text_to_speak(text, None))
+                    logger.info(f"tts耗时: {time.time() - st} s")
 
                     if audio_bytes:
+                        st = time.time()
                         self.tts_audio_queue.put((SentenceType.FIRST, None, text))
                         audio_bytes_to_data_stream(
                             audio_bytes,
@@ -100,7 +102,7 @@ class TTSProviderBase(ABC):
                             is_opus=True,
                             callback=opus_handler,
                         )
-                        logger.info(f"tts耗时: {time.time() - st} s")
+                        logger.info(f"tts转opus耗时: {time.time() - st} s")
                         break
                     else:
                         max_repeat_time -= 1
