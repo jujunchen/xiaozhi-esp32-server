@@ -1,7 +1,9 @@
 import os
+import re
 import time
-import edge_tts
+import json
 import asyncio
+import aiohttp
 import traceback
 import queue
 from io import BytesIO
@@ -34,6 +36,11 @@ class TTSProvider(TTSProviderBase):
         # 首包计时
         self.first_opus_sent = False
         self.start_time = 0
+        # 复用aiohttp会话，保持连接复用
+        self.session = None
+        # 缓存edge令牌
+        self._auth_token = None
+        self._token_expires_at = 0
 
     def tts_text_priority_thread(self):
         """流式文本处理线程"""
@@ -114,10 +121,44 @@ class TTSProvider(TTSProviderBase):
         finally:
             return None
 
+    async def _get_auth_token(self):
+        """获取EdgeTTS认证令牌，缓存复用"""
+        now = time.time()
+        if self._auth_token and now < self._token_expires_at:
+            return self._auth_token
+
+        # 创建session如果不存在
+        if self.session is None:
+            timeout = aiohttp.ClientTimeout(total=10, connect=5)
+            self.session = aiohttp.ClientSession(timeout=timeout)
+
+        url = "https://edge.microsoft.com/cognitiveservices/v1"
+        async with self.session.get(url) as resp:
+            data = await resp.text()
+        # 提取令牌
+        match = re.search(r'sp=https://[^"]+"', data)
+        if match:
+            token_url = match.group(0).split('=')[1].strip('"')
+            async with self.session.get(token_url) as resp:
+                token_data = await resp.json()
+                self._auth_token = token_data['token']
+                self._token_expires_at = now + token_data['expiresIn'] - 60  # 提前60秒过期
+                return self._auth_token
+        return None
+
+    def _build_ssml(self, text):
+        """构建SSML请求"""
+        # 处理语速音量
+        rate = self.rate
+        volume = self.volume
+        ssml = f'<speak version="1.0" xmlns="http://www.w3.org/2001/10/synthesis" xmlns:mstts="https://www.w3.org/2001/mstts" xml:lang="zh-CN"><voice name="{self.voice}"><prosody rate="{rate}" volume="{volume}">{text}</prosody></voice></speak>'
+        return ssml
+
     async def text_to_speak(self, text, output_file=None, is_last=False):
-        """流式处理TTS音频，边下载边处理"""
-        # 如果output_file不为None，保持向后兼容，使用旧行为
+        """流式处理TTS音频，边下载边处理，复用HTTP连接"""
+        # 如果output_file不为None，保持向后兼容
         if output_file is not None:
+            import edge_tts
             try:
                 communicate = edge_tts.Communicate(text, voice=self.voice, rate=self.rate, volume=self.volume)
                 with open(output_file, "ab") as f:
@@ -129,8 +170,23 @@ class TTSProvider(TTSProviderBase):
                 logger.bind(tag=TAG).error(f"EdgeTTS file output error: {e}")
                 return None
 
-        # 流式处理新模式
-        communicate = edge_tts.Communicate(text, voice=self.voice, rate=self.rate, volume=self.volume)
+        # 流式处理新模式 - 复用连接
+        token = await self._get_auth_token()
+        if not token:
+            logger.bind(tag=TAG).error("Failed to get EdgeTTS auth token")
+            self.tts_audio_queue.put((SentenceType.LAST, [], None))
+            return
+
+        ssml = self._build_ssml(text)
+        url = f"https://eastus.api.speech.microsoft.com/cognitiveservices/v1/deep-neural-text-to-speech/audio/stream?SpeechSynthesisOutputFormat=audio-24khz-48kbitrate-mono-mp3"
+
+        headers = {
+            "Authorization": f"Bearer {token}",
+            "Content-Type": "application/ssml+xml",
+            "X-Microsoft-OutputFormat": "audio-24khz-48kbitrate-mono-mp3",
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+        }
+
         frame_bytes = int(
             self.opus_encoder.sample_rate
             * self.opus_encoder.channels
@@ -146,24 +202,32 @@ class TTSProvider(TTSProviderBase):
             self.start_time = time.time()
             self.tts_audio_queue.put((SentenceType.FIRST, [], text))
 
-            async for chunk in communicate.stream():
-                if chunk["type"] == "audio":
-                    mp3_buffer.extend(chunk["data"])
+            async with self.session.post(url, headers=headers, data=ssml) as resp:
+                if resp.status != 200:
+                    logger.bind(tag=TAG).error(f"EdgeTTS request failed: {resp.status}")
+                    self.tts_audio_queue.put((SentenceType.LAST, [], None))
+                    return
 
-                    # 积累足够数据后解码处理（约8KB以上）
-                    if len(mp3_buffer) >= 8192:
-                        if len(mp3_buffer) > 0:
-                            try:
-                                # 解码MP3为PCM
-                                audio = AudioSegment.from_file(BytesIO(mp3_buffer), format="mp3", parameters=["-nostdin"])
-                                # 转换为16kHz 单声道 16-bit PCM
-                                audio = audio.set_channels(1).set_frame_rate(16000).set_sample_width(2)
-                                raw_pcm = audio.raw_data
-                                self.pcm_buffer.extend(raw_pcm)
-                                mp3_buffer.clear()
-                            except Exception:
-                                # 解码失败可能是因为不完整的MP3，继续积累数据
-                                pass
+                async for chunk in resp.content.iter_chunked(4096):
+                    if not chunk:
+                        continue
+
+                    mp3_buffer.extend(chunk)
+
+                    # 每次收到数据都尝试解码，尽早处理
+                    # 解码失败说明数据不完整，继续积累即可
+                    if len(mp3_buffer) > 0:
+                        try:
+                            # 解码MP3为PCM
+                            audio = AudioSegment.from_file(BytesIO(mp3_buffer), format="mp3", parameters=["-nostdin"])
+                            # 转换为16kHz 单声道 16-bit PCM
+                            audio = audio.set_channels(1).set_frame_rate(16000).set_sample_width(2)
+                            raw_pcm = audio.raw_data
+                            self.pcm_buffer.extend(raw_pcm)
+                            mp3_buffer.clear()
+                        except Exception:
+                            # 解码失败可能是因为不完整的MP3，继续积累数据
+                            pass
 
                     # 处理所有完整的PCM帧
                     while len(self.pcm_buffer) >= frame_bytes:
@@ -229,22 +293,37 @@ class TTSProvider(TTSProviderBase):
         start_time = time.time()
         text = MarkdownCleaner.clean_markdown(text)
         try:
-            # 同步获取完整MP3
-            communicate = edge_tts.Communicate(text, voice=self.voice, rate=self.rate, volume=self.volume)
-            mp3_bytes = b""
+            # 使用复用的session获取完整MP3
+            token = asyncio.run(self._get_auth_token())
+            if not token:
+                logger.bind(tag=TAG).error("Failed to get EdgeTTS auth token for non-stream")
+                return []
+
+            ssml = self._build_ssml(text)
+            url = f"https://eastus.api.speech.microsoft.com/cognitiveservices/v1/deep-neural-text-to-speech/audio/stream?SpeechSynthesisOutputFormat=audio-24khz-48kbitrate-mono-mp3"
+
+            headers = {
+                "Authorization": f"Bearer {token}",
+                "Content-Type": "application/ssml+xml",
+                "X-Microsoft-OutputFormat": "audio-24khz-48kbitrate-mono-mp3",
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+            }
+
             async def collect_chunks():
-                nonlocal mp3_bytes
-                async for chunk in communicate.stream():
-                    if chunk["type"] == "audio":
-                        mp3_bytes += chunk["data"]
-            asyncio.run(collect_chunks())
+                if self.session is None:
+                    timeout = aiohttp.ClientTimeout(total=10, connect=5)
+                    self.session = aiohttp.ClientSession(timeout=timeout)
+                async with self.session.post(url, headers=headers, data=ssml) as resp:
+                    return await resp.read()
+
+            mp3_bytes = asyncio.run(collect_chunks())
 
             # 解码为PCM
             audio = AudioSegment.from_file(BytesIO(mp3_bytes), format="mp3")
             audio = audio.set_channels(1).set_frame_rate(16000).set_sample_width(2)
             pcm_data = bytearray(audio.raw_data)
 
-            logger.info(f"EdgeTTS合成成功: {text}, 耗时: {time.time() - start_time:.3f}秒")
+            logger.info(f"EdgeTTS合成成功: {text}, 总耗时: {time.time() - start_time:.3f}秒")
 
             # 使用opus编码器处理
             opus_datas = []
@@ -279,3 +358,5 @@ class TTSProvider(TTSProviderBase):
         await super().close()
         if hasattr(self, "opus_encoder"):
             self.opus_encoder.close()
+        if self.session is not None:
+            await self.session.close()
