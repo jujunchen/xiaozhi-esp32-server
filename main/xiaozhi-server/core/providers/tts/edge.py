@@ -4,7 +4,6 @@ import edge_tts
 from datetime import datetime
 from core.providers.tts.base import TTSProviderBase
 
-
 class TTSProvider(TTSProviderBase):
     def __init__(self, config, delete_audio_file):
         super().__init__(config, delete_audio_file)
@@ -22,7 +21,7 @@ class TTSProvider(TTSProviderBase):
 
     async def text_to_speak(self, text, output_file):
         try:
-            communicate = edge_tts.Communicate(text, voice=self.voice)
+            communicate = edge_tts.Communicate(text, voice=self.voice, rate="+10%", volume="+10%")
             if output_file:
                 # 确保目录存在并创建空文件
                 os.makedirs(os.path.dirname(output_file), exist_ok=True)

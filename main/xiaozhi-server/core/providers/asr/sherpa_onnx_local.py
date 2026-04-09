@@ -107,6 +107,21 @@ class ASRProvider(ASRProviderBase):
                     hr_rule_fsts=self.replace_fst,
                     hr_lexicon=self.lexicon,
                 )
+            elif self.model_type == "transducer_stream":  
+                self.model = sherpa_onnx.OnlineRecognizer.from_transducer(
+                    encoder=os.path.join(self.model_dir, "encoder-epoch-99-avg-1.int8.onnx"),
+                    decoder=os.path.join(self.model_dir, "decoder-epoch-99-avg-1.onnx"),
+                    joiner=os.path.join(self.model_dir, "joiner-epoch-99-avg-1.int8.onnx"),
+                    tokens=self.tokens_path,
+                    num_threads=2,
+                    sample_rate=16000,
+                    feature_dim=80,
+                    decoding_method="greedy_search",
+                    debug=False,
+                    provider="cpu",
+                    hr_rule_fsts=self.replace_fst,
+                    hr_lexicon=self.lexicon,
+                )    
             elif self.model_type == "transducer":  #支持热词
                 self.model = sherpa_onnx.OfflineRecognizer.from_transducer(
                     encoder=os.path.join(self.model_dir, "encoder-epoch-34-avg-19.onnx"),
@@ -121,8 +136,8 @@ class ASRProvider(ASRProviderBase):
                     provider="cpu",
                     modeling_unit="cjkchar+bpe",
                     bpe_vocab=os.path.join(self.model_dir, "bbpe.vocab"),
-                    hotwords_file=self.hotwords_file,
-                    hotwords_score=2.0,
+                    # hotwords_file=self.hotwords_file,
+                    # hotwords_score=2.0,
                     hr_rule_fsts=self.replace_fst,
                     hr_lexicon=self.lexicon,
                 )
@@ -130,11 +145,11 @@ class ASRProvider(ASRProviderBase):
                 self.model = sherpa_onnx.OfflineRecognizer.from_sense_voice(
                     model=self.model_path,
                     tokens=self.tokens_path,
-                    num_threads=5,
+                    num_threads=1,
                     sample_rate=16000,
                     feature_dim=80,
                     decoding_method="greedy_search",
-                    debug=True,
+                    debug=False,
                     provider="cpu",
                     language="zh",
                     use_itn=True,
