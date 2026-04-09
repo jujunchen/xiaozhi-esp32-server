@@ -31,6 +31,9 @@ class TTSProvider(TTSProviderBase):
         # PCM缓冲区
         self.pcm_buffer = bytearray()
         self.audio_file_type = "mp3"
+        # 首包计时
+        self.first_opus_sent = False
+        self.start_time = 0
 
     def tts_text_priority_thread(self):
         """流式文本处理线程"""
@@ -139,14 +142,16 @@ class TTSProvider(TTSProviderBase):
         try:
             mp3_buffer = bytearray()
             self.pcm_buffer.clear()
+            self.first_opus_sent = False
+            self.start_time = time.time()
             self.tts_audio_queue.put((SentenceType.FIRST, [], text))
 
             async for chunk in communicate.stream():
                 if chunk["type"] == "audio":
                     mp3_buffer.extend(chunk["data"])
 
-                    # 积累足够数据后解码处理（约16KB以上）
-                    if len(mp3_buffer) >= 16384:
+                    # 积累足够数据后解码处理（约8KB以上）
+                    if len(mp3_buffer) >= 8192:
                         if len(mp3_buffer) > 0:
                             try:
                                 # 解码MP3为PCM
@@ -164,6 +169,12 @@ class TTSProvider(TTSProviderBase):
                     while len(self.pcm_buffer) >= frame_bytes:
                         frame = bytes(self.pcm_buffer[:frame_bytes])
                         del self.pcm_buffer[:frame_bytes]
+
+                        if not self.first_opus_sent:
+                            # 记录首包延迟
+                            first_latency = time.time() - self.start_time
+                            logger.bind(tag=TAG).info(f"EdgeTTS首包延迟: {first_latency:.3f}s")
+                            self.first_opus_sent = True
 
                         self.opus_encoder.encode_pcm_to_opus_stream(
                             frame, end_of_stream=False, callback=self.handle_opus
@@ -185,6 +196,12 @@ class TTSProvider(TTSProviderBase):
                 if len(self.pcm_buffer) < frame_bytes:
                     padding_needed = frame_bytes - len(self.pcm_buffer)
                     self.pcm_buffer.extend(b"\x00" * padding_needed)
+
+                if not self.first_opus_sent:
+                    # 记录首包延迟（这是唯一的一帧）
+                    first_latency = time.time() - self.start_time
+                    logger.bind(tag=TAG).info(f"EdgeTTS首包延迟: {first_latency:.3f}s")
+                    self.first_opus_sent = True
 
                 self.opus_encoder.encode_pcm_to_opus_stream(
                     bytes(self.pcm_buffer),
