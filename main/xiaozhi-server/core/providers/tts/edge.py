@@ -150,20 +150,21 @@ class TTSProvider(TTSProviderBase):
                 if chunk["type"] == "audio":
                     mp3_buffer.extend(chunk["data"])
 
-                    # 每次收到数据都尝试解码，尽早处理
-                    # 解码失败说明数据不完整，继续积累即可
-                    if len(mp3_buffer) > 0:
-                        try:
-                            # 解码MP3为PCM
-                            audio = AudioSegment.from_file(BytesIO(mp3_buffer), format="mp3", parameters=["-nostdin"])
-                            # 转换为16kHz 单声道 16-bit PCM
-                            audio = audio.set_channels(1).set_frame_rate(16000).set_sample_width(2)
-                            raw_pcm = audio.raw_data
-                            self.pcm_buffer.extend(raw_pcm)
-                            mp3_buffer.clear()
-                        except Exception:
-                            # 解码失败可能是因为不完整的MP3，继续积累数据
-                            pass
+                    # 积累足够数据后解码处理（约4KB以上）
+                    # 较小阈值平衡延迟和稳定性
+                    if len(mp3_buffer) >= 4096:
+                        if len(mp3_buffer) > 0:
+                            try:
+                                # 解码MP3为PCM
+                                audio = AudioSegment.from_file(BytesIO(mp3_buffer), format="mp3", parameters=["-nostdin"])
+                                # 转换为16kHz 单声道 16-bit PCM
+                                audio = audio.set_channels(1).set_frame_rate(16000).set_sample_width(2)
+                                raw_pcm = audio.raw_data
+                                self.pcm_buffer.extend(raw_pcm)
+                                mp3_buffer.clear()
+                            except Exception:
+                                # 解码失败可能是因为不完整的MP3，继续积累数据
+                                pass
 
                     # 处理所有完整的PCM帧
                     while len(self.pcm_buffer) >= frame_bytes:
